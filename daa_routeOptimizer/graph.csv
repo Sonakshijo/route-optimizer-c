@@ -1,0 +1,13 @@
+SOURCE,DESTINATION,DISTANCE,SOURCE_TYPE,DEST_TYPE
+ISBT,railway station,8,bus stop,railway station
+ISBT,clock tower,10,bus stop,landmark
+jogiwala,MOD,5,locality,locality
+rispana pul,jogiwala,7,bridge,locality
+kargi chauk,rispana pul,5,chauk,bridge
+GEU,ISBT,3,university,bus stop
+ISBT,kargi chauk,6,bus stop,chauk
+paltan bazaar,doon hospital,10,market,hospital
+doon hospital,luxmi park,3,hospital,park
+luxmi park,balbir road,9,park,road
+balbir road,nehru colony,8,road,colony
+nehru colony,rispana pul,6,colony,bridge
