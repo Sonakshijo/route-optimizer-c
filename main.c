@@ -240,7 +240,11 @@ int main() {
     printf("Enter category to find nearest (e.g., hospital, bus stop): ");
     scanf(" %[^\n]", nearestCategory);
 
-    int start = getIndex("GEU");
+    char startName[100];
+printf("Enter starting location: ");
+scanf(" %[^\n]", startName);
+int start = getIndex(startName);
+
     int end = getIndex(destName);
 
     if (start == -1 || end == -1) {
