@@ -10,6 +10,14 @@ char placeNames[MAX][100];
 char placeTypes[MAX][100];
 int placeCount = 0;
 
+typedef struct {
+    char name[100];
+    double lat;
+    double lon;
+} PlaceCoord;
+
+PlaceCoord placeCoords[MAX];
+
 // Map place name to index
 int getIndex(char* name) {
     for (int i = 0; i < placeCount; i++) {
@@ -25,7 +33,8 @@ int addPlace(char* name, char* type) {
     if (index == -1) {
         strcpy(placeNames[placeCount], name);
         strcpy(placeTypes[placeCount], type);
-        // Initialize new row and column in graph to 0
+        placeCoords[placeCount].lat = 0.0;
+        placeCoords[placeCount].lon = 0.0;
         for (int i = 0; i <= placeCount; i++) {
             graph[placeCount][i] = 0;
             graph[i][placeCount] = 0;
@@ -40,7 +49,7 @@ int addPlace(char* name, char* type) {
 void readGraphFromCSV(char* filename) {
     FILE* fp = fopen(filename, "r");
     if (!fp) {
-        printf("Error opening file\n");
+        printf("Error opening file %s\n", filename);
         exit(1);
     }
 
@@ -60,6 +69,29 @@ void readGraphFromCSV(char* filename) {
         graph[destIndex][srcIndex] = dist;
     }
 
+    fclose(fp);
+}
+
+// Read place coordinates from CSV (places.csv)
+void readPlaceCoordinates(char* filename) {
+    FILE* fp = fopen(filename, "r");
+    if (!fp) {
+        printf("Error opening file %s\n", filename);
+        exit(1);
+    }
+    char line[256];
+    fgets(line, sizeof(line), fp); // skip header
+
+    while (fgets(line, sizeof(line), fp)) {
+        char name[100];
+        double lat, lon;
+        sscanf(line, "%[^,],%lf,%lf", name, &lat, &lon);
+        int idx = getIndex(name);
+        if (idx != -1) {
+            placeCoords[idx].lat = lat;
+            placeCoords[idx].lon = lon;
+        }
+    }
     fclose(fp);
 }
 
@@ -98,12 +130,12 @@ void dfsAllPaths(int u, int dest, int visited[], int path[], int path_index) {
     } else {
         for (int v = 0; v < placeCount; v++) {
             if (graph[u][v] && !visited[v]) {
+                printf("Visiting %s -> %s\n", placeNames[u], placeNames[v]);  // DEBUG
                 dfsAllPaths(v, dest, visited, path, path_index);
             }
         }
     }
 
-    path_index--;
     visited[u] = 0;
 }
 
@@ -123,6 +155,12 @@ int minDistance(int dist[], int sptSet[]) {
         }
     }
     return minIndex;
+}
+double calculateFare(int distance) {
+    if (distance <= 5)
+        return 50.0;
+    else
+        return 50.0 + (distance - 5) * 10.0;
 }
 
 void dijkstra(int src, int dist[], int parent[]) {
@@ -148,7 +186,27 @@ void dijkstra(int src, int dist[], int parent[]) {
     }
 }
 
-// Write shortest path to CSV
+void writePathToHTML(char* filename, int* path) {
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        printf("Unable to write HTML file.\n");
+        return;
+    }
+
+    fprintf(fp, "<!DOCTYPE html><html><head><title>Shortest Route</title></head><body>");
+    fprintf(fp, "<h2>Shortest Path</h2><p style='font-size:18px;'>");
+
+    for (int i = 0; path[i] != -1; i++) {
+        fprintf(fp, "%s", placeNames[path[i]]);
+        if (path[i + 1] != -1)
+            fprintf(fp, " → ");
+    }
+
+    fprintf(fp, "</p></body></html>");
+    fclose(fp);
+}
+
+// Write shortest path route string to CSV (legacy)
 void writePathToCSV(char* filename, int* path) {
     FILE* fp = fopen(filename, "w");
     if (!fp) {
@@ -167,6 +225,42 @@ void writePathToCSV(char* filename, int* path) {
     fclose(fp);
 }
 
+// Write shortest_path.csv with lat/lon for folium map
+void writeShortestPathCSV(char* filename, int* path) {
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        printf("Unable to write shortest_path.csv\n");
+        return;
+    }
+    fprintf(fp, "lat,lon\n");
+    for (int i = 0; path[i] != -1; i++) {
+        int idx = path[i];
+        fprintf(fp, "%lf,%lf\n", placeCoords[idx].lat, placeCoords[idx].lon);
+    }
+    fclose(fp);
+}
+
+// Write all_paths.csv with all edges for folium map
+void writeAllPathsCSV(char* filename) {
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        printf("Unable to write all_paths.csv\n");
+        return;
+    }
+    fprintf(fp, "path_id,lat,lon\n");
+    int path_id = 0;
+    for (int i = 0; i < placeCount; i++) {
+        for (int j = i + 1; j < placeCount; j++) {
+            if (graph[i][j] != 0) {
+                fprintf(fp, "%d,%lf,%lf\n", path_id, placeCoords[i].lat, placeCoords[i].lon);
+                fprintf(fp, "%d,%lf,%lf\n", path_id, placeCoords[j].lat, placeCoords[j].lon);
+                path_id++;
+            }
+        }
+    }
+    fclose(fp);
+}
+
 // Reconstruct and display shortest path
 void getShortestPath(int start, int end) {
     int dist[MAX], parent[MAX];
@@ -180,84 +274,94 @@ void getShortestPath(int start, int end) {
     int path[MAX];
     int count = 0;
     int crawl = end;
-
     while (crawl != -1) {
         path[count++] = crawl;
         crawl = parent[crawl];
     }
-
+    // Reverse path
     int reversed[MAX];
-    for (int i = 0; i < count; i++)
-        reversed[i] = path[count - 1 - i];
+    for (int i = 0; i < count; i++) {
+        reversed[i] = path[count - i - 1];
+    }
     reversed[count] = -1;
 
-    printf("\nShortest path from %s to %s:\n", placeNames[start], placeNames[end]);
-    for (int i = 0; i < count; i++) {
+    printf("Shortest path distance: %d km\n", dist[end]);
+    printf("Shortest path: ");
+    for (int i = 0; reversed[i] != -1; i++) {
         printf("%s", placeNames[reversed[i]]);
-        if (i != count - 1)
+        if (reversed[i + 1] != -1)
             printf(" -> ");
     }
     printf("\n");
 
+    double fare = calculateFare(dist[end]);
+    printf("Estimated travel fare: ₹%.2f\n", fare);
+
     writePathToCSV("route_output.csv", reversed);
-    printf("Shortest path written to route_output.csv\n");
+    writePathToHTML("route_output.html", reversed);
+    writeShortestPathCSV("shortest_path.csv", reversed);
 }
 
-// Find nearest location of given type
-void findNearestOfType(int src, char* category) {
-    int dist[MAX], parent[MAX];
-    dijkstra(src, dist, parent);
 
+// Find nearest place of given type from destination
+void findNearestOfType(int destination, char* category) {
     int minDist = INT_MAX;
-    int nearest = -1;
+    int nearestIndex = -1;
 
     for (int i = 0; i < placeCount; i++) {
-        if (strcmp(placeTypes[i], category) == 0 && dist[i] < minDist) {
-            minDist = dist[i];
-            nearest = i;
+        if (strcmp(placeTypes[i], category) == 0) {
+            if (graph[i][destination] != 0 && graph[i][destination] < minDist) {
+                minDist = graph[i][destination];
+                nearestIndex = i;
+            }
         }
     }
 
-    if (nearest == -1) {
-        printf("No location of category '%s' found near %s.\n", category, placeNames[src]);
-        return;
+    if (nearestIndex != -1) {
+        printf("Nearest place of category '%s' from %s is %s at distance %d\n",
+            category, placeNames[destination], placeNames[nearestIndex], minDist);
+    } else {
+        printf("No place of category '%s' found near %s\n", category, placeNames[destination]);
     }
-
-    printf("\nNearest %s to %s is %s (%d units away).\n", category, placeNames[src], placeNames[nearest], minDist);
 }
 
 int main() {
-    char destName[100];
-    char nearestCategory[100];
-
     readGraphFromCSV("graph.csv");
+    readPlaceCoordinates("places.csv");
     printAdjacencyMatrix();
 
-    // User input for destination and nearest category
-    printf("\nEnter destination location: ");
-    scanf(" %[^\n]", destName);
+    char startName[100], endName[100], nearestCategory[100];
+    printf("Enter the start location: ");
+    fgets(startName, sizeof(startName), stdin);
+    startName[strcspn(startName, "\n")] = 0;
 
-    printf("Enter category to find nearest (e.g., hospital, bus stop): ");
-    scanf(" %[^\n]", nearestCategory);
+    printf("Enter the destination location: ");
+    fgets(endName, sizeof(endName), stdin);
+    endName[strcspn(endName, "\n")] = 0;
 
-    char startName[100];
-printf("Enter starting location: ");
-scanf(" %[^\n]", startName);
-int start = getIndex(startName);
+    printf("Enter the category for nearest search: ");
+    fgets(nearestCategory, sizeof(nearestCategory), stdin);
+    nearestCategory[strcspn(nearestCategory, "\n")] = 0;
 
-    int end = getIndex(destName);
+    int start = getIndex(startName);
+    int end = getIndex(endName);
 
     if (start == -1 || end == -1) {
-        printf("Invalid start or destination.\n");
+        printf("Invalid start or end location.\n");
         return 1;
     }
 
-    printf("\nAll paths from %s to %s:\n\n", placeNames[start], placeNames[end]);
+    printf("\nAll paths between %s and %s:\n", startName, endName);
     findAllPaths(start, end);
 
+    printf("\nShortest path from %s to %s:\n", startName, endName);
     getShortestPath(start, end);
+
+    writeAllPathsCSV("all_paths.csv");
 
     findNearestOfType(end, nearestCategory);
 
     return 0;
 }
+
+
