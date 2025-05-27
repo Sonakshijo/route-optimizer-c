@@ -1,24 +1,50 @@
-import openrouteservice
-
+import pandas as pd
 import folium
-import openrouteservice
-from openrouteservice import convert
 
-client = openrouteservice.Client(key='5b3ce3597851110001cf62482a5185a1fa974c828851b51f0a344e8e')
+# Load places and their coordinates
+places_df = pd.read_csv('places.csv')
 
-coords = [(78.0790, 30.2849), (78.0322, 30.3076)]  # (lon, lat) format
+# Load all paths edges (pairs of lat/lon) from your C program output
+all_paths_df = pd.read_csv('all_paths.csv')
 
-# Get route
-route = client.directions(coords, profile='foot-walking', format='geojson')
+# Load shortest path coordinates
+shortest_path_df = pd.read_csv('shortest_path.csv')
 
-# Create map
-m = folium.Map(location=[30.295, 78.055], zoom_start=13)
+# Initialize map centered roughly at average coordinates
+center_lat = places_df['lat'].mean()
+center_lon = places_df['lon'].mean()
+m = folium.Map(location=[center_lat, center_lon], zoom_start=14)
 
-# Add route to map
-folium.GeoJson(route, name="route").add_to(m)
+# Add all edges (paths) with thin gray lines
+for path_id in all_paths_df['path_id'].unique():
+    segment = all_paths_df[all_paths_df['path_id'] == path_id]
+    coords = list(zip(segment['lat'], segment['lon']))
+    folium.PolyLine(
+        coords,
+        color='gray',
+        weight=2,
+        opacity=0.5
+    ).add_to(m)
 
-# Add markers
-folium.Marker(location=coords[0][::-1], popup="Start").add_to(m)
-folium.Marker(location=coords[1][::-1], popup="End").add_to(m)
+# Add shortest path polyline with distinct color and weight
+shortest_coords = list(zip(shortest_path_df['lat'], shortest_path_df['lon']))
+folium.PolyLine(
+    shortest_coords,
+    color='red',
+    weight=5,
+    opacity=0.8,
+    tooltip='Shortest Path'
+).add_to(m)
 
-m.save("smart_route.html")
+# Add markers for all places with popups and tooltips
+for idx, row in places_df.iterrows():
+    folium.Marker(
+        location=[row['lat'], row['lon']],
+        popup=folium.Popup(f"<b>{row['name']}</b>", max_width=200),
+        tooltip=row['name'],
+        icon=folium.Icon(color='blue', icon='info-sign')
+    ).add_to(m)
+
+# Save the map to HTML file
+m.save('route_output.html')
+print("Map saved as route_output.html")
